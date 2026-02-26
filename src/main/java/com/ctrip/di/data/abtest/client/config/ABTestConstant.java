@@ -6,4 +6,10 @@ public interface ABTestConstant {
     String DEFAULT_ALL = "-1";
     String DEFAULT_VERSION = "A";
     String EXPCODE_REGEX = "[_\\w]+";
+    // web abtest
+    String ABTEST_UID = "_abtest_userid";
+    String ABTEST_QUERY = "ab_alternative";
+    String ABTEST_GIVEN_VERSION = "_abtest_internal_";
+    int ABTEST_MAX_AGE = 86400000; // in seconds, 1000 days
+
 }

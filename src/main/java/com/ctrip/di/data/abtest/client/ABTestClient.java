@@ -2,8 +2,13 @@ package com.ctrip.di.data.abtest.client;
 
 import com.ctrip.di.data.abtest.client.algorithm.MD5HashGenerator;
 import com.ctrip.di.data.abtest.client.config.ABTestConstant;
+import com.ctrip.di.data.abtest.client.config.WebContext;
+import com.ctrip.di.data.abtest.client.exception.ABTestException;
+import com.ctrip.di.data.abtest.client.exception.ErrorCode;
 import com.ctrip.di.data.abtestmetadataservice.Metadata;
 import com.ctrip.di.data.abtestservice.Alternative;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.apache.commons.lang.StringUtils;
 
 import java.util.Map;
@@ -21,13 +26,12 @@ public final class ABTestClient {
      * @param divisionID 分流ID，如 cid, uid, vid 等可以唯一标识用户的 ID
      * @param metadata   实验元数据（已从gateway服务获取到的实验元数据）
      * @return 分流结果
-     *
      * @apiNote 建议结合项目进行日志监控，记录以下信息以便排障：
-     *          - 调用次数：统计方法调用频率，统计量级
-     *          - 分流结果分布：记录分到各个版本（A/B/C等）的用户数量
-     *          - 分流详情：记录expCode、divisionID、version、mod等关键信息
-     *          - 异常情况：记录分流失败或返回默认值的情况
-     *          这些监控数据有助于验证分流逻辑是否正确执行、检查各版本流量分配是否符合预期、快速定位分流异常问题。
+     * - 调用次数：统计方法调用频率，统计量级
+     * - 分流结果分布：记录分到各个版本（A/B/C等）的用户数量
+     * - 分流详情：记录expCode、divisionID、version、mod等关键信息
+     * - 异常情况：记录分流失败或返回默认值的情况
+     * 这些监控数据有助于验证分流逻辑是否正确执行、检查各版本流量分配是否符合预期、快速定位分流异常问题。
      */
     public static Alternative getAlternative(final String expCode,
                                              final String divisionID,
@@ -84,6 +88,68 @@ public final class ABTestClient {
 
         return new Alternative(metadata.getCode(), metadata.getEffectTime(), divisionID,
                 ABTestConstant.DEFAULT_VERSION, mod, metadata.getDomainCode(), metadata.getLayerCode(), null);
+    }
+
+    /**
+     * Get the alternative of web abtest.
+     *
+     * @param expCode      experiment code like 200330_IFLT_wkq
+     * @param httpRequest  http servlet request, get divisionID from cookie, if no divisionID then create one and set it
+     *                     in response cookie
+     * @param httpResponse http servlet response, set expCode and version in cookie
+     * @param metadata     exp metadata
+     *                     //     * @param systemCode   system code like 12, 32, etc.
+     *                     //     * @param appId        app id like 99999999,1003,etc.
+     *                     //     * @param appVer       app version like 810.110, 707.010, etc.
+     * @return the result of web abtest
+     */
+    public static Alternative getAlternativeOfWeb(final String expCode,
+                                                  HttpServletRequest httpRequest, HttpServletResponse httpResponse,
+                                                  final Metadata metadata
+//                                                  final String systemCode,
+//                                                  final String appId, final String appVer
+    ) {
+        String divisionID = null;
+        String version = null;
+        Alternative alternative = null;
+        try {
+            if (StringUtils.isBlank(expCode)) {
+                throw new ABTestException(ErrorCode.BLANK_EXPCODE, expCode);
+            }
+            if (!expCode.matches(ABTestConstant.EXPCODE_REGEX)) {
+                throw new ABTestException(ErrorCode.INVALID_EXPCODE, expCode);
+            }
+            if (httpRequest == null) {
+                throw new ABTestException(ErrorCode.NULL_HTTP_REQUEST, expCode);
+            }
+            if (httpResponse == null) {
+                throw new ABTestException(ErrorCode.NULL_HTTP_RESPONSE, expCode);
+            }
+
+            WebContext webContext = new WebContext(httpRequest, httpResponse);
+            divisionID = webContext.getUid();
+            if (StringUtils.isBlank(divisionID)) {
+                throw new ABTestException(ErrorCode.BLANK_DIVISIONID, divisionID);
+            }
+
+            version = webContext.getVersion(expCode);
+            // 仅考虑服务端分流
+//            alternative = ABClientCache.getInstance().getAlternative(expCode, divisionID, systemCode,
+//                    appId, appVer);
+            alternative = getAlternative(expCode,
+                    divisionID,
+                    metadata);
+            if (!StringUtils.isBlank(version)) {
+                alternative.setVersion(version);
+                alternative.setMod(ABTestConstant.DEFAULT_MOD);
+            }
+        } catch (Exception e) {
+            if (alternative == null) {
+                alternative = new Alternative(expCode, null, divisionID, ABTestConstant.DEFAULT_VERSION,
+                        ABTestConstant.DEFAULT_MOD, null, null, null);
+            }
+        }
+        return alternative;
     }
 }
 
